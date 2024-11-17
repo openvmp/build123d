@@ -1,4 +1,4 @@
-# This is a declaration of a PartCAD package.
+# This is the declaration of build123d PartCAD package.
 # See https://partcad.org/ and https://github.com/openvmp/partcad for more information.
 
 desc: Examples of parts defined with build123d
@@ -7,6 +7,8 @@ partcad: ">=0.5.22"
 pythonRequirements:
   - ocp_vscode
   - build123d>=0.7.1
+cover:
+  part: examples/benchy
 
 sketches:
   examples/clock:
