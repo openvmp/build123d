@@ -1,4 +1,13 @@
 import unittest, uuid
+from io import BytesIO
+from packaging.specifiers import SpecifierSet
+from pathlib import Path
+from os import fsdecode, fsencode
+import sys
+import tempfile
+
+import pytest
+
 from build123d.build_enums import MeshType, Unit
 from build123d.build_part import BuildPart
 from build123d.build_sketch import BuildSketch
@@ -9,6 +18,12 @@ from build123d.operations_part import extrude
 from build123d.topology import Compound, Solid
 from build123d.geometry import Axis, Color, Location, Vector, VectorLike
 from build123d.mesher import Mesher
+
+
+def temp_3mf_file():
+    caller = sys._getframe(1)
+    prefix = f"build123d_{caller.f_locals.get('self').__class__.__name__}_{caller.f_code.co_name}"
+    return tempfile.mktemp(suffix=".3mf", prefix=prefix)
 
 
 class DirectApiTestCase(unittest.TestCase):
@@ -36,15 +51,16 @@ class DirectApiTestCase(unittest.TestCase):
 class TestProperties(unittest.TestCase):
     def test_version(self):
         exporter = Mesher()
-        self.assertEqual(exporter.library_version, "2.3.1")
+        assert exporter.library_version in SpecifierSet(">= 2.3.1")
 
     def test_units(self):
         for unit in Unit:
+            filename = temp_3mf_file()
             exporter = Mesher(unit=unit)
             exporter.add_shape(Solid.make_box(1, 1, 1))
-            exporter.write("test.3mf")
+            exporter.write(filename)
             importer = Mesher()
-            _shape = importer.read("test.3mf")
+            _shape = importer.read(filename)
             self.assertEqual(unit, importer.model_unit)
 
     def test_vertex_and_triangle_counts(self):
@@ -66,9 +82,10 @@ class TestMetaData(unittest.TestCase):
         exporter.add_shape(Solid.make_box(1, 1, 1))
         exporter.add_meta_data("test_space", "test0", "some data", "str", True)
         exporter.add_meta_data("test_space", "test1", "more data", "str", True)
-        exporter.write("test.3mf")
+        filename = temp_3mf_file()
+        exporter.write(filename)
         importer = Mesher()
-        _shape = importer.read("test.3mf")
+        _shape = importer.read(filename)
         imported_meta_data: list[dict] = importer.get_meta_data()
         self.assertEqual(imported_meta_data[0]["name_space"], "test_space")
         self.assertEqual(imported_meta_data[0]["name"], "test0")
@@ -83,9 +100,10 @@ class TestMetaData(unittest.TestCase):
         exporter = Mesher()
         exporter.add_shape(Solid.make_box(1, 1, 1))
         exporter.add_code_to_metadata()
-        exporter.write("test.3mf")
+        filename = temp_3mf_file()
+        exporter.write(filename)
         importer = Mesher()
-        _shape = importer.read("test.3mf")
+        _shape = importer.read(filename)
         source_code = importer.get_meta_data_by_key("build123d", "test_mesher.py")
         self.assertEqual(len(source_code), 2)
         self.assertEqual(source_code["type"], "python")
@@ -111,9 +129,10 @@ class TestMeshProperties(unittest.TestCase):
                     part_number=str(mesh_type.value),
                     uuid_value=test_uuid,
                 )
-                exporter.write("test.3mf")
+                filename = temp_3mf_file()
+                exporter.write(filename)
                 importer = Mesher()
-                shape = importer.read("test.3mf")
+                shape = importer.read(filename)
                 self.assertEqual(shape[0].label, name)
                 self.assertEqual(importer.mesh_count, 1)
                 properties = importer.get_mesh_properties()
@@ -134,9 +153,10 @@ class TestAddShape(DirectApiTestCase):
         red_shape.color = Color("red")
         red_shape.label = "red"
         exporter.add_shape([blue_shape, red_shape])
-        exporter.write("test.3mf")
+        filename = temp_3mf_file()
+        exporter.write(filename)
         importer = Mesher()
-        box, cone = importer.read("test.3mf")
+        box, cone = importer.read(filename)
         self.assertVectorAlmostEquals(box.bounding_box().size, (1, 1, 1), 2)
         self.assertVectorAlmostEquals(box.bounding_box().size, (1, 1, 1), 2)
         self.assertEqual(len(box.clean().faces()), 6)
@@ -151,9 +171,10 @@ class TestAddShape(DirectApiTestCase):
         cone = Solid.make_cone(1, 0, 2).locate(Location((0, -1, 0)))
         shape_assembly = Compound([box, cone])
         exporter.add_shape(shape_assembly)
-        exporter.write("test.3mf")
+        filename = temp_3mf_file()
+        exporter.write(filename)
         importer = Mesher()
-        shapes = importer.read("test.3mf")
+        shapes = importer.read(filename)
         self.assertEqual(importer.mesh_count, 2)
 
 
@@ -188,7 +209,8 @@ class TestHollowImport(unittest.TestCase):
         export_stl(test_shape, "test.stl")
         importer = Mesher()
         stl = importer.read("test.stl")
-        self.assertTrue(stl[0].is_valid())
+        self.assertTrue(stl[0].is_valid)
+        self.assertAlmostEqual(test_shape.volume, stl[0].volume, 0)
 
 
 class TestImportDegenerateTriangles(unittest.TestCase):
@@ -201,8 +223,37 @@ class TestImportDegenerateTriangles(unittest.TestCase):
             stl = importer.read("cyl_w_rect_hole.stl")[0]
         self.assertEqual(type(stl), Solid)
         self.assertTrue(stl.is_manifold)
-        self.assertTrue(stl.is_valid())
+        self.assertTrue(stl.is_valid)
         self.assertEqual(sum(f.area == 0 for f in stl.faces()), 0)
+
+
+@pytest.mark.parametrize(
+    "format", (Path, fsencode, fsdecode), ids=["path", "bytes", "str"]
+)
+def test_pathlike_mesher(tmp_path, format):
+    filename = temp_3mf_file()
+    path = format(tmp_path / filename)
+    exporter, importer = Mesher(), Mesher()
+    exporter.add_shape(Solid.make_box(1, 1, 1))
+    exporter.write(path)
+    importer.read(path)
+
+
+@pytest.mark.parametrize("file_type", ("3mf", "stl"))
+def test_in_memory_mesher(file_type):
+    stream = BytesIO()
+    exporter = Mesher()
+    exporter.add_shape(Solid.make_box(1, 1, 1))
+    exporter.write_stream(stream, file_type)
+    assert stream.getbuffer().nbytes > 0
+
+
+def test_in_memory_mesher_invalid_file_type():
+    stream = BytesIO()
+    exporter = Mesher()
+    exporter.add_shape(Solid.make_box(1, 1, 1))
+    with pytest.raises(ValueError, match="Unknown file format"):
+        exporter.write_stream(stream, "obj")  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

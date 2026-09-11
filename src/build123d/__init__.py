@@ -8,6 +8,7 @@ from build123d.build_sketch import *
 from build123d.exporters import *
 from build123d.geometry import *
 from build123d.importers import *
+from build123d.import_dxf import import_dxf
 from build123d.joints import *
 from build123d.mesher import *
 from build123d.objects_curve import *
@@ -21,6 +22,8 @@ from build123d.topology import *
 from build123d.drafting import *
 from build123d.persistence import modify_copyreg
 from build123d.exporters3d import *
+from build123d.text import available_fonts, FontManager
+from build123d.brep_from_stl import detect_primitives
 
 from .version import version as __version__
 
@@ -28,11 +31,13 @@ modify_copyreg()
 
 __all__ = [
     # Length Constants
+    "MC",
     "MM",
     "CM",
     "M",
     "IN",
     "FT",
+    "THOU",
     # Unit Conversions
     "UNITS_PER_METER",
     # Mass Constants
@@ -44,6 +49,7 @@ __all__ = [
     "ApproxOption",
     "AngularDirection",
     "CenterOf",
+    "ContinuityLevel",
     "Extrinsic",
     "FontStyle",
     "FrameMethod",
@@ -52,16 +58,19 @@ __all__ = [
     "Intrinsic",
     "Keep",
     "Kind",
+    "Sagitta",
     "LengthMode",
     "MeshType",
     "Mode",
     "NumberDisplay",
     "PageSize",
+    "Tangency",
     "PositionMode",
     "PrecisionMode",
     "Select",
     "Side",
     "SortBy",
+    "TextAlign",
     "Transition",
     "Unit",
     "Until",
@@ -75,11 +84,18 @@ __all__ = [
     "BuildSketch",
     # 1D Curve Objects
     "BaseLineObject",
+    "Airfoil",
     "Bezier",
+    "BlendCurve",
+    "BSpline",
     "CenterArc",
+    "ConstrainedArcs",
+    "ConstrainedLines",
     "DoubleTangentArc",
     "EllipticalCenterArc",
     "EllipticalStartArc",
+    "ParabolicCenterArc",
+    "HyperbolicCenterArc",
     "FilletPolyline",
     "Helix",
     "IntersectingLine",
@@ -92,6 +108,10 @@ __all__ = [
     "TangentArc",
     "JernArc",
     "ThreePointArc",
+    "PointArcTangentLine",
+    "ArcArcTangentLine",
+    "PointArcTangentArc",
+    "ArcArcTangentArc",
     # 2D Sketch Objects
     "ArrowHead",
     "Arrow",
@@ -115,22 +135,25 @@ __all__ = [
     "Triangle",
     # 3D Part Objects
     "BasePartObject",
-    "CounterBoreHole",
-    "CounterSinkHole",
-    "Hole",
     "Box",
     "Cone",
+    "ConvexPolyhedron",
+    "CounterBoreHole",
+    "CounterSinkHole",
     "Cylinder",
+    "Hole",
     "Sphere",
     "Torus",
     "Wedge",
     # Direct API Classes
     "BoundBox",
+    "OrientedBoundBox",
     "Rotation",
     "Rot",
     "Pos",
     "RotationLike",
     "ShapeList",
+    "topo_distance_to",
     "Axis",
     "Color",
     "Curve",
@@ -148,6 +171,7 @@ __all__ = [
     "Compound",
     "Location",
     "LocationEncoder",
+    "GeomEncoder",
     "Joint",
     "RigidJoint",
     "RevoluteJoint",
@@ -155,6 +179,8 @@ __all__ = [
     "LinearJoint",
     "CylindricalJoint",
     "BallJoint",
+    "DraftAngleError",
+    "FontManager",
     # Exporter classes
     "Export2D",
     "ExportDXF",
@@ -163,7 +189,9 @@ __all__ = [
     "DotLength",
     "Mesher",
     # Importer functions
+    "detect_primitives",
     "import_brep",
+    "import_dxf",
     "import_step",
     "import_stl",
     "import_svg",
@@ -174,6 +202,7 @@ __all__ = [
     "new_edges",
     "pack",
     "polar",
+    "available_fonts",
     # Context aware selectors
     "solids",
     "faces",
@@ -189,6 +218,7 @@ __all__ = [
     "add",
     "bounding_box",
     "chamfer",
+    "draft",
     "extrude",
     "fillet",
     "full_round",
@@ -216,4 +246,5 @@ __all__ = [
     "export_gltf",
     "export_stl",
     "export_brep",
+    "export_to_pcbway",
 ]
