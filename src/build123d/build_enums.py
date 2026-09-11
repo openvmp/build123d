@@ -27,7 +27,16 @@ license:
 """
 
 from __future__ import annotations
-from enum import Enum, auto
+
+from enum import Enum, auto, IntEnum, unique
+from typing import TypeAlias
+
+from OCP.GccEnt import (
+    GccEnt_unqualified,
+    GccEnt_enclosing,
+    GccEnt_enclosed,
+    GccEnt_outside,
+)
 
 
 class Align(Enum):
@@ -36,9 +45,15 @@ class Align(Enum):
     MIN = auto()
     CENTER = auto()
     MAX = auto()
+    NONE = None
 
     def __repr__(self):
         return f"<{self.__class__.__name__}.{self.name}>"
+
+
+Align2D: TypeAlias = Align | None | tuple[Align | None, Align | None]
+
+Align3D: TypeAlias = Align | None | tuple[Align | None, Align | None, Align | None]
 
 
 class ApproxOption(Enum):
@@ -71,6 +86,28 @@ class CenterOf(Enum):
 
     def __repr__(self):
         return f"<{self.__class__.__name__}.{self.name}>"
+
+
+@unique
+class ContinuityLevel(IntEnum):
+    """
+    Continuity level for evaluating geometric connections.
+
+    Used to determine how smoothly adjacent geometry joins together,
+    such as at shared vertices between edges or shared edges between faces.
+
+    Levels:
+
+    - C0 (G0): Positional continuity—elements meet at a point but may have sharp angles.
+    - C1 (G1): Tangent continuity—elements have the same tangent direction at the junction.
+    - C2 (G2): Curvature continuity—elements have matching curvature at the junction.
+
+    These levels correspond to common CAD definitions and are compatible with OCCT's GeomAbs_Shape.
+    """
+
+    C0 = 0
+    C1 = 1
+    C2 = 2
 
 
 class Extrinsic(Enum):
@@ -163,9 +200,12 @@ class Intrinsic(Enum):
 class Keep(Enum):
     """Split options"""
 
-    TOP = auto()
+    ALL = auto()
     BOTTOM = auto()
     BOTH = auto()
+    INSIDE = auto()
+    OUTSIDE = auto()
+    TOP = auto()
 
     def __repr__(self):
         return f"<{self.__class__.__name__}.{self.name}>"
@@ -201,6 +241,18 @@ class FontStyle(Enum):
     REGULAR = auto()
     BOLD = auto()
     ITALIC = auto()
+    BOLDITALIC = auto()
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+
+class Sagitta(Enum):
+    """Sagitta selection"""
+
+    SHORT = 0
+    LONG = -1
+    BOTH = 1
 
     def __repr__(self):
         return f"<{self.__class__.__name__}.{self.name}>"
@@ -256,6 +308,18 @@ class PageSize(Enum):
     LETTER = auto()
     LEGAL = auto()
     LEDGER = auto()
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+
+class Tangency(Enum):
+    """Tangency constraint for solvers edge selection"""
+
+    UNQUALIFIED = GccEnt_unqualified
+    ENCLOSING = GccEnt_enclosing
+    ENCLOSED = GccEnt_enclosed
+    OUTSIDE = GccEnt_outside
 
     def __repr__(self):
         return f"<{self.__class__.__name__}.{self.name}>"
@@ -320,6 +384,20 @@ class SortBy(Enum):
     AREA = auto()
     VOLUME = auto()
     DISTANCE = auto()
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}.{self.name}>"
+
+
+class TextAlign(Enum):
+    """Text Alignment"""
+
+    BOTTOM = auto()
+    CENTER = auto()
+    LEFT = auto()
+    RIGHT = auto()
+    TOP = auto()
+    TOPFIRSTLINE = auto()
 
     def __repr__(self):
         return f"<{self.__class__.__name__}.{self.name}>"

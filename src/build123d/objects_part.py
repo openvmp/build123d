@@ -28,14 +28,31 @@ license:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from math import radians, tan
+from scipy.spatial import ConvexHull
 
-from typing import Union
 from build123d.build_common import LocationList, validate_inputs
 from build123d.build_enums import Align, Mode
 from build123d.build_part import BuildPart
-from build123d.geometry import Location, Plane, Rotation, RotationLike, Vector
-from build123d.topology import Compound, Part, Solid, tuplify
+from build123d.geometry import (
+    Location,
+    Plane,
+    Rotation,
+    RotationLike,
+    Vector,
+    VectorLike,
+)
+from build123d.topology import (
+    Compound,
+    Face,
+    Part,
+    ShapeList,
+    Shell,
+    Solid,
+    Wire,
+    tuplify,
+)
 
 
 class BasePartObject(Part):
@@ -45,48 +62,43 @@ class BasePartObject(Part):
 
     Args:
         solid (Solid): object to create
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to None.
-        mode (Mode, optional): combination mode. Defaults to Mode.ADD.
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to None
+        mode (Mode, optional): combination mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
 
     def __init__(
         self,
-        part: Union[Part, Solid],
+        part: Part | Solid,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = None,
+        align: Align | tuple[Align, Align, Align] | None = None,
         mode: Mode = Mode.ADD,
     ):
         if align is not None:
             align = tuplify(align, 3)
             bbox = part.bounding_box()
-            align_offset = []
-            for i in range(3):
-                if align[i] == Align.MIN:
-                    align_offset.append(-bbox.min.to_tuple()[i])
-                elif align[i] == Align.CENTER:
-                    align_offset.append(
-                        -(bbox.min.to_tuple()[i] + bbox.max.to_tuple()[i]) / 2
-                    )
-                elif align[i] == Align.MAX:
-                    align_offset.append(-bbox.max.to_tuple()[i])
-            part.move(Location(Vector(*align_offset)))
+            offset = bbox.to_align_offset(align)
+            part.move(Location(offset))
 
-        context: BuildPart = BuildPart._get_context(self, log=False)
+        context: BuildPart | None = BuildPart._get_context(self, log=False)
         rotate = Rotation(*rotation) if isinstance(rotation, tuple) else rotation
         self.rotation = rotate
         if context is None:
-            new_solids = [part.moved(rotate)]
+            new_solids = [part.moved(rotate)] if rotate != Rotation() else [part]
         else:
             self.mode = mode
 
             if not LocationList._get_context():
                 raise RuntimeError("No valid context found")
             new_solids = [
-                part.moved(location * rotate)
+                (
+                    part.moved(location * rotate)
+                    if rotate != Rotation() or location != Location()
+                    else part
+                )
                 for location in LocationList._get_context().locations
             ]
             if isinstance(context, BuildPart):
@@ -113,16 +125,16 @@ class BasePartObject(Part):
 class Box(BasePartObject):
     """Part Object: Box
 
-    Create a box(es) and combine with part.
+    Create a box defined by length, width, and height.
 
     Args:
-        length (float): box size
-        width (float): box size
-        height (float): box size
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER).
-        mode (Mode, optional): combine mode. Defaults to Mode.ADD.
+        length (float): box length
+        width (float): box width
+        height (float): box height
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER)
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
@@ -133,14 +145,14 @@ class Box(BasePartObject):
         width: float,
         height: float,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = (
+        align: Align | tuple[Align, Align, Align] = (
             Align.CENTER,
             Align.CENTER,
             Align.CENTER,
         ),
         mode: Mode = Mode.ADD,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.length = length
@@ -157,17 +169,17 @@ class Box(BasePartObject):
 class Cone(BasePartObject):
     """Part Object: Cone
 
-    Create a cone(s) and combine with part.
+    Create a cone defined by bottom radius, top radius, and height.
 
     Args:
-        bottom_radius (float): cone size
-        top_radius (float): top size, could be zero
-        height (float): cone size
-        arc_size (float, optional): angular size of cone. Defaults to 360.
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER).
-        mode (Mode, optional): combine mode. Defaults to Mode.ADD.
+        bottom_radius (float): bottom radius
+        top_radius (float): top radius, may be zero
+        height (float): cone height
+        arc_size (float, optional): angular size of cone. Defaults to 360
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER)
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
@@ -179,14 +191,14 @@ class Cone(BasePartObject):
         height: float,
         arc_size: float = 360,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = (
+        align: Align | tuple[Align, Align, Align] = (
             Align.CENTER,
             Align.CENTER,
             Align.CENTER,
         ),
         mode: Mode = Mode.ADD,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.bottom_radius = bottom_radius
@@ -207,17 +219,61 @@ class Cone(BasePartObject):
         )
 
 
+class ConvexPolyhedron(BasePartObject):
+    """Part Object: ConvexPolyhedron
+
+    Create a convex solid from the convex hull of the provided points.
+
+    Args:
+        points (Iterable[VectorLike]): vertices of the polyhedron
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to Align.NONE
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
+    """
+
+    _applies_to = [BuildPart._tag]
+
+    def __init__(
+        self,
+        points: Iterable[VectorLike],
+        rotation: RotationLike = (0, 0, 0),
+        align: Align | tuple[Align, Align, Align] | None = Align.NONE,
+        mode: Mode = Mode.ADD,
+    ):
+        context: BuildPart | None = BuildPart._get_context(self)
+        validate_inputs(context, self)
+
+        pnts: list[tuple] = [tuple(Vector(p)) for p in points]
+
+        # Create a convex hull from the vertices
+        convex_hull = ConvexHull(pnts).simplices.tolist()
+
+        # Create faces from the vertex indices
+        polyhedron_faces = []
+        for face_vertex_indices in convex_hull:
+            corner_vertices = [pnts[i] for i in face_vertex_indices]
+            polyhedron_faces.append(Face(Wire.make_polygon(corner_vertices)))
+
+        # Create the solid from the Faces
+        polyhedron = Solid(Shell(polyhedron_faces)).clean()
+
+        super().__init__(
+            part=polyhedron, rotation=rotation, align=tuplify(align, 3), mode=mode
+        )
+
+
 class CounterBoreHole(BasePartObject):
     """Part Operation: Counter Bore Hole
 
-    Create a counter bore hole in part.
+    Create a counter bore hole defined by radius, counter bore radius, counter bore and depth.
 
     Args:
-        radius (float): hole size
-        counter_bore_radius (float): counter bore size
+        radius (float): hole radius
+        counter_bore_radius (float): counter bore radius
         counter_bore_depth (float): counter bore depth
-        depth (float, optional): hole depth - None implies through part. Defaults to None.
-        mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT.
+        depth (float, optional): hole depth, through part if None. Defaults to None
+        mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT
     """
 
     _applies_to = [BuildPart._tag]
@@ -227,10 +283,10 @@ class CounterBoreHole(BasePartObject):
         radius: float,
         counter_bore_radius: float,
         counter_bore_depth: float,
-        depth: float = None,
+        depth: float | None = None,
         mode: Mode = Mode.SUBTRACT,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.radius = radius
@@ -244,7 +300,7 @@ class CounterBoreHole(BasePartObject):
             raise ValueError("No depth provided")
         self.mode = mode
 
-        solid = Solid.make_cylinder(
+        fused = Solid.make_cylinder(
             radius, self.hole_depth, Plane(origin=(0, 0, 0), z_dir=(0, 0, -1))
         ).fuse(
             Solid.make_cylinder(
@@ -253,20 +309,25 @@ class CounterBoreHole(BasePartObject):
                 Plane((0, 0, -counter_bore_depth)),
             )
         )
+        if isinstance(fused, ShapeList):
+            solid = Part(fused)
+        else:
+            solid = fused
         super().__init__(part=solid, rotation=(0, 0, 0), mode=mode)
 
 
 class CounterSinkHole(BasePartObject):
     """Part Operation: Counter Sink Hole
 
-    Create a counter sink hole in part.
+    Create a countersink hole defined by radius, countersink radius, countersink
+    angle, and depth.
 
     Args:
-        radius (float): hole size
-        counter_sink_radius (float): counter sink size
-        depth (float, optional): hole depth - None implies through part. Defaults to None.
-        counter_sink_angle (float, optional): cone angle. Defaults to 82.
-        mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT.
+        radius (float): hole radius
+        counter_sink_radius (float): countersink radius
+        depth (float, optional): hole depth, through part if None. Defaults to None
+        counter_sink_angle (float, optional): cone angle. Defaults to 82
+        mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT
     """
 
     _applies_to = [BuildPart._tag]
@@ -275,11 +336,11 @@ class CounterSinkHole(BasePartObject):
         self,
         radius: float,
         counter_sink_radius: float,
-        depth: float = None,
+        depth: float | None = None,
         counter_sink_angle: float = 82,  # Common tip angle
         mode: Mode = Mode.SUBTRACT,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.radius = radius
@@ -294,7 +355,7 @@ class CounterSinkHole(BasePartObject):
         self.mode = mode
         cone_height = counter_sink_radius / tan(radians(counter_sink_angle / 2.0))
 
-        solid = Solid.make_cylinder(
+        fused = Solid.make_cylinder(
             radius, self.hole_depth, Plane(origin=(0, 0, 0), z_dir=(0, 0, -1))
         ).fuse(
             Solid.make_cone(
@@ -305,22 +366,27 @@ class CounterSinkHole(BasePartObject):
             ),
             Solid.make_cylinder(counter_sink_radius, self.hole_depth),
         )
+        if isinstance(fused, ShapeList):
+            solid = Part(fused)
+        else:
+            solid = fused
+
         super().__init__(part=solid, rotation=(0, 0, 0), mode=mode)
 
 
 class Cylinder(BasePartObject):
     """Part Object: Cylinder
 
-    Create a cylinder(s) and combine with part.
+    Create a cylinder defined by radius and height.
 
     Args:
-        radius (float): cylinder size
-        height (float): cylinder size
+        radius (float): cylinder radius
+        height (float): cylinder height
         arc_size (float, optional): angular size of cone. Defaults to 360.
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER).
-        mode (Mode, optional): combine mode. Defaults to Mode.ADD.
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER)
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
@@ -331,14 +397,14 @@ class Cylinder(BasePartObject):
         height: float,
         arc_size: float = 360,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = (
+        align: Align | tuple[Align, Align, Align] = (
             Align.CENTER,
             Align.CENTER,
             Align.CENTER,
         ),
         mode: Mode = Mode.ADD,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.radius = radius
@@ -359,12 +425,12 @@ class Cylinder(BasePartObject):
 class Hole(BasePartObject):
     """Part Operation: Hole
 
-    Create a hole in part.
+    Create a hole defined by radius and depth.
 
     Args:
-        radius (float): hole size
-        depth (float, optional): hole depth - None implies through part. Defaults to None.
-        mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT.
+        radius (float): hole radius
+        depth (float, optional): hole depth, through part if None. Defaults to None
+        mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT
     """
 
     _applies_to = [BuildPart._tag]
@@ -372,10 +438,10 @@ class Hole(BasePartObject):
     def __init__(
         self,
         radius: float,
-        depth: float = None,
+        depth: float | None = None,
         mode: Mode = Mode.SUBTRACT,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.radius = radius
@@ -406,17 +472,17 @@ class Hole(BasePartObject):
 class Sphere(BasePartObject):
     """Part Object: Sphere
 
-    Create a sphere(s) and combine with part.
+    Create a sphere defined by a radius.
 
     Args:
-        radius (float): sphere size
-        arc_size1 (float, optional): angular size of sphere. Defaults to -90.
-        arc_size2 (float, optional): angular size of sphere. Defaults to 90.
-        arc_size3 (float, optional): angular size of sphere. Defaults to 360.
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER).
-        mode (Mode, optional): combine mode. Defaults to Mode.ADD.
+        radius (float): sphere radius
+        arc_size1 (float, optional): angular size of bottom hemisphere. Defaults to -90.
+        arc_size2 (float, optional): angular size of top hemisphere. Defaults to 90.
+        arc_size3 (float, optional): angular revolution about pole. Defaults to 360.
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER)
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
@@ -428,14 +494,14 @@ class Sphere(BasePartObject):
         arc_size2: float = 90,
         arc_size3: float = 360,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = (
+        align: Align | tuple[Align, Align, Align] = (
             Align.CENTER,
             Align.CENTER,
             Align.CENTER,
         ),
         mode: Mode = Mode.ADD,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.radius = radius
@@ -458,18 +524,18 @@ class Sphere(BasePartObject):
 class Torus(BasePartObject):
     """Part Object: Torus
 
-    Create a torus(es) and combine with part.
-
+    Create a torus defined by major and minor radii.
 
     Args:
-        major_radius (float): torus size
-        minor_radius (float): torus size
-        major_arc_size (float, optional): angular size of torus. Defaults to 0.
-        minor_arc_size (float, optional): angular size or torus. Defaults to 360.
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER).
-        mode (Mode, optional): combine mode. Defaults to Mode.ADD.
+        major_radius (float): major torus radius
+        minor_radius (float): minor torus radius
+        minor_start_angle (float, optional): angle to start minor arc. Defaults to 0
+        minor_end_angle (float, optional): angle to end minor arc. Defaults to 360
+        major_angle (float, optional): angle to revolve minor arc. Defaults to 360
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER)
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
@@ -482,14 +548,14 @@ class Torus(BasePartObject):
         minor_end_angle: float = 360,
         major_angle: float = 360,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = (
+        align: Align | tuple[Align, Align, Align] = (
             Align.CENTER,
             Align.CENTER,
             Align.CENTER,
         ),
         mode: Mode = Mode.ADD,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         self.major_radius = major_radius
@@ -514,24 +580,27 @@ class Torus(BasePartObject):
 class Wedge(BasePartObject):
     """Part Object: Wedge
 
-    Create a wedge(s) and combine with part.
+    Create a wedge with a near face defined by xsize and z size, a far face defined by
+    xmin to xmax and zmin to zmax, and a depth of ysize.
 
     Args:
-        xsize (float): distance along the X axis
-        ysize (float): distance along the Y axis
-        zsize (float): distance along the Z axis
-        xmin (float): minimum X location
-        zmin (float): minimum Z location
-        xmax (float): maximum X location
-        zmax (float): maximum Z location
-        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0).
-        align (Union[Align, tuple[Align, Align, Align]], optional): align min, center,
-            or max of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER).
-        mode (Mode, optional): combine mode. Defaults to Mode.ADD.
+        xsize (float): length of near face along x-axis
+        ysize (float): length of part along y-axis
+        zsize (float): length of near face z-axis
+        xmin (float): minimum position far face along x-axis
+        zmin (float): minimum position far face along z-axis
+        xmax (float): maximum position far face along x-axis
+        zmax (float): maximum position far face along z-axis
+        rotation (RotationLike, optional): angles to rotate about axes. Defaults to (0, 0, 0)
+        align (Align | tuple[Align, Align, Align] | None, optional): align MIN, CENTER,
+            or MAX of object. Defaults to (Align.CENTER, Align.CENTER, Align.CENTER)
+        mode (Mode, optional): combine mode. Defaults to Mode.ADD
     """
 
     _applies_to = [BuildPart._tag]
 
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
     def __init__(
         self,
         xsize: float,
@@ -542,14 +611,14 @@ class Wedge(BasePartObject):
         xmax: float,
         zmax: float,
         rotation: RotationLike = (0, 0, 0),
-        align: Union[Align, tuple[Align, Align, Align]] = (
+        align: Align | tuple[Align, Align, Align] = (
             Align.CENTER,
             Align.CENTER,
             Align.CENTER,
         ),
         mode: Mode = Mode.ADD,
     ):
-        context: BuildPart = BuildPart._get_context(self)
+        context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
 
         if any([value <= 0 for value in [xsize, ysize, zsize]]):
